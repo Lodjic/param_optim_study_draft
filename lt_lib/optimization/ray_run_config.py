@@ -1,5 +1,6 @@
 # Author: Loïc Thiriet
 
+import os
 import zipfile
 from pathlib import Path
 from typing import Literal
@@ -52,8 +53,9 @@ class OnTrialCallback(tune.Callback):
         archive_artifact = wandb.Artifact(name=f"ray_results-{Path(trial.path).parent.name}", type="ray_results")
         archive_artifact.add_file(experiment_archive_path)
         wandb.log_artifact(archive_artifact)
-
         wandb.finish()
+
+        os.remove(experiment_archive_path)
 
     def on_trial_complete(self, iteration: int, trials: list[Trial], trial: Trial, **info):
         if self.on_trial_callback == "on_trial_complete":

@@ -156,9 +156,15 @@ def optimization(args):
             trainable=tune.with_parameters(
                 trainable_fct, use_wandb_ray_integration=args.use_wandb_ray_integration, cli_args=args
             ),
-            resume_errored=True,
+            restart_errored=True,
             param_space=Tuner_config["param_space"],
         )
+
+        # If a scheduler.pkl file is available in the experiment directory restore it
+        scheduler_path = Path(args.restore_dir_path) / "scheduler.pkl"
+        if scheduler_path.is_file():
+            tuner._local_tuner._tune_config.scheduler.restore(scheduler_path)
+
         # Copies python optimization_config file to experiment directory restored
         nb_config_files = len(list(Path(args.restore_dir_path).glob("optimization_config*")))
         shutil.copy2(
@@ -177,4 +183,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    args = OptimizationCliArgs(
+        inputs_directory="/Users/loic/Documents/KTH/2023-2024/Master-Thesis/datasets/dataset_test",
+        outputs_directory="/Users/loic/Documents/KTH/2023-2024/Master-Thesis/outputs/outputs_test",
+        model_config_path="configs/model_config_test.yaml",
+        config_path="configs/full_config_test.yaml",
+        optimization_config_path="configs/config.py",
+        # resume=True,
+    )
+
+    optimization(args)

@@ -122,7 +122,7 @@ def creates_trial_configs_from_sampled_parameters(
     return trial_config_path, trial_model_config_path
 
 
-def objective(sampled_params: dict[str, Any], use_wandb_ray_integration: bool, cli_args):
+def objective(sampled_params: dict[str, Any], use_wandb_ray_integration: bool, cli_args: dict):
     # Get the train context
     trial_id = ray_train.get_context().get_trial_id()
     trial_name = ray_train.get_context().get_trial_name()
