@@ -158,7 +158,7 @@ def objective(sampled_params: dict[str, Any], use_wandb_ray_integration: bool, c
             config={k.split(".")[-1]: v for k, v in sampled_params.items()},
             rank_zero_only=False,
             dir=ray_results_dir,
-            id=trial_id,
+            id=trial_name,
             name=trial_name,
             group=wandb_init_params["group"] if "group" in wandb_init_params.keys() else None,
             project=wandb_init_params["project"] if "project" in wandb_init_params.keys() else experiment_name,
