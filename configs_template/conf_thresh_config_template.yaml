@@ -18,8 +18,9 @@ tasks:
             ### Float being the threshold value or Dict listing the threshold per label.
             # dict[int, float] | dict[str, float] | float
             threshold:
-                1: 0.011
-                2: 0.01
+                1: 0.1
+                2: 0.2
+                3: 0.25
 
             ########## Paths ##########
             ### Path to the predictions dataframe (csv).

@@ -48,7 +48,7 @@ tune_config = tune.TuneConfig(
             consider_prior=True,
             prior_weight=1,
             consider_magic_clip=True,
-            n_startup_trials=2,
+            n_startup_trials=10,
             n_ei_candidates=24,
             seed=random_seed,
             multivariate=False,
@@ -61,9 +61,8 @@ tune_config = tune.TuneConfig(
         metric=["val.level1.recall", "val.level1.precision"],
         mode=["max", "max"],
     ),
-    # search_alg=BasicVariantGenerator(max_concurrent=1, random_state=random_seed),
     scheduler=None,
-    num_samples=5,
+    num_samples=50,
     max_concurrent_trials=1,
     trial_name_creator=generate_trial_name,
     trial_dirname_creator=generate_trial_name,
@@ -75,18 +74,17 @@ tune_config = tune.TuneConfig(
 run_config = train.RunConfig(
     name=f"experiment-seed{random_seed}_{datetime.now().isoformat(sep='_', timespec='seconds').replace(':', '-')}",
     local_dir="/content/ray_results",
-    # checkpoint_config=train.CheckpointConfig(
-    #     num_to_keep=1,
-    #     checkpoint_score_attribute="val.loss",
-    #     checkpoint_score_order="min",
-    # ),
+    checkpoint_config=train.CheckpointConfig(
+        num_to_keep=1,
+        checkpoint_score_attribute="val.level2.mAP",
+        checkpoint_score_order="max",
+    ),
     verbose=0,
     log_to_file=True,
 )
 
-### String expliciting which on_trial and on_experiment function to over-implement to log model checkpoint (Artifact)
-# to wandb
-# str
+### String and boolean expliciting which on_trial function to over-implement to log model checkpoint (Artifact) to wandb
+# str or bool
 on_trial_callback_type = "on_trial_start"
 on_experiment_callback_type = "on_experiment_end"
 log_experiment_to_wandb = True

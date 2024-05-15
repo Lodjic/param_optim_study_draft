@@ -15,7 +15,7 @@ tasks:
 
     train_task:
         task_type: train
-        inputs: root.dataset
+        inputs: dataset:inputs_directory
 
         config:
             ###############################################
