@@ -1,32 +1,26 @@
 import math
 import warnings
-from collections import OrderedDict
-from functools import partial
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
-import numpy as np
-import pandas as pd
 import torch
+import torchvision.models.detection._utils as _detection_utils
 from torch import Tensor, nn
-from torchvision.models._api import Weights, WeightsEnum, register_model
+from torchvision.models._api import Weights, WeightsEnum
 from torchvision.models._meta import _COCO_CATEGORIES
-from torchvision.models._utils import _ovewrite_value_param, handle_legacy_interface
 from torchvision.models.detection.backbone_utils import (
     _resnet_fpn_extractor,
     _validate_trainable_layers,
 )
-from torchvision.models.detection.transform import GeneralizedRCNNTransform
+
+# from torchvision.models.detection.transform import GeneralizedRCNNTransform
 from torchvision.models.resnet import ResNet50_Weights, resnet50
 from torchvision.ops import boxes as box_ops
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import sigmoid_focal_loss
 from torchvision.ops.feature_pyramid_network import LastLevelP6P7
 from torchvision.transforms._presets import ObjectDetection
-from torchvision.utils import _log_api_usage_once
 
-import lt_lib.architecture.utils as det_utils
 from lt_lib.architecture.anchor_utils import AnchorGenerator
-from lt_lib.architecture.utils import _box_loss, overwrite_eps
 
 __all__ = [
     "RetinaNet",
@@ -62,6 +56,7 @@ def _default_anchorgen():
 
 class RetinaNetHead(nn.Module):
     """
+    Identical class version of the RetinaNetHead class from PyTorch 2.1.2.
     A regression and classification head for use in RetinaNet.
 
     Args:
@@ -92,6 +87,7 @@ class RetinaNetHead(nn.Module):
 
 class RetinaNetClassificationHead(nn.Module):
     """
+    Identical class version of the RetinaNetClassificationHead class from PyTorch 2.1.2.
     A classification head for use in RetinaNet.
 
     Args:
@@ -131,10 +127,10 @@ class RetinaNetClassificationHead(nn.Module):
         self.num_classes = num_classes
         self.num_anchors = num_anchors
 
-        # This is to fix using det_utils.Matcher.BETWEEN_THRESHOLDS in TorchScript.
+        # This is to fix using _detection_utils.Matcher.BETWEEN_THRESHOLDS in TorchScript.
         # TorchScript doesn't support class attributes.
         # https://github.com/pytorch/vision/pull/1697#issuecomment-630255584
-        self.BETWEEN_THRESHOLDS = det_utils.Matcher.BETWEEN_THRESHOLDS
+        self.BETWEEN_THRESHOLDS = _detection_utils.Matcher.BETWEEN_THRESHOLDS
 
     def _load_from_state_dict(
         self,
@@ -215,6 +211,7 @@ class RetinaNetClassificationHead(nn.Module):
 
 class RetinaNetRegressionHead(nn.Module):
     """
+    Identical class version of the RetinaNetRegressionHead class from PyTorch 2.1.2.
     A regression head for use in RetinaNet.
 
     Args:
@@ -226,7 +223,7 @@ class RetinaNetRegressionHead(nn.Module):
     _version = 2
 
     __annotations__ = {
-        "box_coder": det_utils.BoxCoder,
+        "box_coder": _detection_utils.BoxCoder,
     }
 
     def __init__(self, in_channels, num_anchors, norm_layer: Optional[Callable[..., nn.Module]] = None):
@@ -247,7 +244,7 @@ class RetinaNetRegressionHead(nn.Module):
                 if layer.bias is not None:
                     torch.nn.init.zeros_(layer.bias)
 
-        self.box_coder = det_utils.BoxCoder(weights=(1.0, 1.0, 1.0, 1.0))
+        self.box_coder = _detection_utils.BoxCoder(weights=(1.0, 1.0, 1.0, 1.0))
         self._loss_type = "l1"
 
     def _load_from_state_dict(
@@ -295,7 +292,7 @@ class RetinaNetRegressionHead(nn.Module):
 
             # compute the loss
             losses.append(
-                _box_loss(
+                _detection_utils._box_loss(
                     self._loss_type,
                     self.box_coder,
                     anchors_per_image,
@@ -328,7 +325,9 @@ class RetinaNetRegressionHead(nn.Module):
 
 class RetinaNet(nn.Module):
     """
-    Implements RetinaNet.
+    Modified version of the RetinaNet class from PyTorch 2.1.2 to simplify its parametrization and return more
+    information to be able to run insightful post-processing operations.
+    It implements the RetinaNet.
 
     The input to the model is expected to be a list of tensors, each of shape [C, H, W], one for each
     image, and should be in 0-1 range. Different images can have different sizes.
@@ -412,8 +411,8 @@ class RetinaNet(nn.Module):
     """
 
     __annotations__ = {
-        "box_coder": det_utils.BoxCoder,
-        "proposal_matcher": det_utils.Matcher,
+        "box_coder": _detection_utils.BoxCoder,
+        "proposal_matcher": _detection_utils.Matcher,
     }
 
     def __init__(
@@ -465,7 +464,7 @@ class RetinaNet(nn.Module):
 
         # Assigns the matcher between GTs and anchors
         if proposal_matcher is None:
-            proposal_matcher = det_utils.Matcher(
+            proposal_matcher = _detection_utils.Matcher(
                 fg_iou_thresh,
                 bg_iou_thresh,
                 allow_low_quality_matches=True,
@@ -511,19 +510,18 @@ class RetinaNet(nn.Module):
 
         return self.head.compute_loss(targets, head_outputs, anchors, matched_idxs)
 
-    def forward(self, images, targets=None):
-        # type: (List[Tensor], Optional[List[Dict[str, Tensor]]]) -> Tuple[Dict[str, Tensor], List[Dict[str, Tensor]]]
+    def forward(
+        self, images: list[Tensor], targets: list[Dict[str, Tensor]] | None = None
+    ) -> tuple[dict[str, Tensor], list[dict[str, Tensor]]]:
         """
+        Modified forward pass of the RetinaNet model.
+
         Args:
-            images (list[Tensor]): images to be processed
-            targets (list[Dict[Tensor]]): ground-truth boxes present in the image (optional)
+            images: images to be processed
+            targets: ground-truth boxes present in the image (optional)
 
         Returns:
-            result (list[BoxList] or dict[Tensor]): the output from the model.
-                During training, it returns a dict[Tensor] which contains the losses.
-                During testing, it returns list[BoxList] contains additional fields
-                like `scores`, `labels` and `mask` (for Mask R-CNN models).
-
+            losses and detections: the output from the model.
         """
         if self.training:
             if targets is None:
@@ -587,7 +585,7 @@ class RetinaNet(nn.Module):
                 anchors=anchors,
                 image_shapes=original_image_sizes,
                 num_anchors_per_level=num_anchors_per_level,
-                box_coder=det_utils.BoxCoder(weights=(1.0, 1.0, 1.0, 1.0)),
+                box_coder=_detection_utils.BoxCoder(weights=(1.0, 1.0, 1.0, 1.0)),
             )
 
         return losses, detections
@@ -600,6 +598,22 @@ class RetinaNet(nn.Module):
         num_anchors_per_level,
         box_coder,
     ):
+        """
+        Splits and processes the model head outputs to generate detections with increased information compared to the
+        original processing funciton from PyTorch 2.1.2.
+
+        Args:
+            head_outputs: Dictionary containing tensors of class logits and bounding box regression outputs.
+            anchors: List of tensors containing anchor boxes.
+            image_shapes: List of tuples representing the shapes of input images.
+            num_anchors_per_level: Number of anchors per pyramid level.
+            box_coder: Box coder object for decoding bounding box predictions.
+
+        Returns:
+            List[Dict[str, Tensor]]: A list of dictionaries containing detected boxes, scores, and probable labels for
+                each image.
+
+        """
         # type : (Dict[str, List[Tensor]], List[List[Tensor]], List[Tuple[int, int]]) -> List[Dict[str, Tensor]]
 
         # Splits outputs per pyramid level 'cls_logits' and 'bbox_regression'
@@ -644,7 +658,7 @@ class RetinaNet(nn.Module):
                 topk_idxs = torch.where(keep_mask)[0]
 
                 # Keep only topk scoring predictions
-                num_topk = det_utils._topk_min(topk_idxs, self.topk_candidates, 0)
+                num_topk = _detection_utils._topk_min(topk_idxs, self.topk_candidates, 0)
                 scores_max_per_level_values, idxs = scores_max_per_level_values.topk(num_topk)
                 scores_max_per_level_indices = scores_max_per_level_indices[idxs]
                 topk_idxs = topk_idxs[idxs]
@@ -700,119 +714,6 @@ def check_for_degenerate_bboxes(targets):
                 )
 
 
-def postprocess_detections_og(
-    head_outputs,
-    anchors,
-    image_shapes,
-    score_thresh,
-    nms_iou_thresh,
-    topk_candidates,
-    nb_max_detections_per_img,
-    box_coder,
-):
-    # type : (Dict[str, List[Tensor]], List[List[Tensor]], List[Tuple[int, int]]) -> List[Dict[str, Tensor]]
-    class_logits = head_outputs["cls_logits"]
-    box_regression = head_outputs["bbox_regression"]
-
-    num_images = len(image_shapes)
-
-    detections: List[Dict[str, Tensor]] = []
-
-    # Processes images 1 by 1
-    for index in range(num_images):
-        # Extracts the image bboxes regressed and class labels associated from the tensor
-        box_regression_per_image = [br[index] for br in box_regression]
-        logits_per_image = [cl[index] for cl in class_logits]
-        anchors_per_image, image_shape = anchors[index], image_shapes[index]
-
-        image_boxes = []
-        image_scores = []
-        image_labels = []
-
-        # Processes levels 1 by 1
-        for box_regression_per_level, logits_per_level, anchors_per_level in zip(
-            box_regression_per_image, logits_per_image, anchors_per_image
-        ):
-            num_classes = logits_per_level.shape[-1]
-
-            # Removes low scoring boxes and flattens the scores
-            scores_per_level = torch.sigmoid(logits_per_level).flatten()
-            keep_idxs = scores_per_level > score_thresh
-            scores_per_level = scores_per_level[keep_idxs]
-            topk_idxs = torch.where(keep_idxs)[0]
-
-            # Keep only topk scoring predictions
-            num_topk = det_utils._topk_min(topk_idxs, topk_candidates, 0)
-            scores_per_level, idxs = scores_per_level.topk(num_topk)
-            topk_idxs = topk_idxs[idxs]
-
-            # Finds the anchors unflattened positions by dividing the position by the number of classes
-            anchor_idxs = torch.div(topk_idxs, num_classes, rounding_mode="floor")
-            labels_per_level = topk_idxs % num_classes
-
-            # Decodes the bboxes positions on the image and clip it to the image
-            boxes_per_level = box_coder.decode_single(
-                box_regression_per_level[anchor_idxs], anchors_per_level[anchor_idxs]
-            )
-            boxes_per_level = box_ops.clip_boxes_to_image(boxes_per_level, image_shape)
-
-            image_boxes.append(boxes_per_level)
-            image_scores.append(scores_per_level)
-            image_labels.append(labels_per_level)
-
-        image_boxes = torch.cat(image_boxes, dim=0)
-        image_scores = torch.cat(image_scores, dim=0)
-        image_labels = torch.cat(image_labels, dim=0)
-
-        # non-maximum suppression
-        keep = box_ops.batched_nms(image_boxes, image_scores, image_labels, nms_iou_thresh)
-        keep = keep[:nb_max_detections_per_img]
-
-        detections.append(
-            {
-                "boxes": image_boxes[keep],
-                "scores": image_scores[keep],
-                "labels": image_labels[keep],
-            }
-        )
-
-    return detections
-
-
-def postprocess_detections_one_img(
-    detections,
-    score_thresh,
-    nms_iou_thresh,
-    topk_candidates,
-    nb_max_detections_per_img,
-):
-    # Removes low scoring boxes and flattens the scores
-    keep_mask = detections["scores_max"] > score_thresh
-    detections["scores_max"] = detections["scores_max"][keep_mask]
-    topk_idxs = torch.where(keep_mask)[0]
-
-    # Keep only topk scoring predictions
-    num_topk = det_utils._topk_min(topk_idxs, topk_candidates, 0)
-    detections["scores_max"], idxs = detections["scores_max"].topk(num_topk)
-    topk_idxs = topk_idxs[idxs]
-
-    # Filter bboxes following criteria specified
-    detections["probable_labels"] = detections["probable_labels"][topk_idxs]
-    detections["scores"] = detections["scores"][topk_idxs]
-    detections["boxes"] = detections["boxes"][topk_idxs]
-
-    # non-maximum suppression
-    keep = box_ops.batched_nms(
-        detections["boxes"], detections["scores_max"], detections["probable_labels"], nms_iou_thresh
-    )
-    keep = keep[:nb_max_detections_per_img]
-
-    for key in detections.keys():
-        detections[key] = detections[key][keep]
-
-    return detections
-
-
 _COMMON_META = {
     "categories": _COCO_CATEGORIES,
     "min_size": (1, 1),
@@ -861,109 +762,6 @@ class RetinaNet_ResNet50_FPN_V2_Weights(WeightsEnum):
     DEFAULT = COCO_V1
 
 
-@register_model()
-@handle_legacy_interface(
-    weights=("pretrained", RetinaNet_ResNet50_FPN_Weights.COCO_V1),
-    weights_backbone=("pretrained_backbone", ResNet50_Weights.IMAGENET1K_V1),
-)
-def retinanet_resnet50_fpn_local(
-    *,
-    weights: Optional[RetinaNet_ResNet50_FPN_Weights] = None,
-    progress: bool = True,
-    num_classes: Optional[int] = None,
-    weights_backbone: Optional[ResNet50_Weights] = ResNet50_Weights.IMAGENET1K_V1,
-    trainable_backbone_layers: Optional[int] = None,
-    **kwargs: Any,
-) -> RetinaNet:
-    """
-    Constructs a RetinaNet model with a ResNet-50-FPN backbone.
-
-    .. betastatus:: detection module
-
-    Reference: `Focal Loss for Dense Object Detection <https://arxiv.org/abs/1708.02002>`_.
-
-    The input to the model is expected to be a list of tensors, each of shape ``[C, H, W]``, one for each
-    image, and should be in ``0-1`` range. Different images can have different sizes.
-
-    The behavior of the model changes depending on if it is in training or evaluation mode.
-
-    During training, the model expects both the input tensors and targets (list of dictionary),
-    containing:
-
-        - boxes (``FloatTensor[N, 4]``): the ground-truth boxes in ``[x1, y1, x2, y2]`` format, with
-          ``0 <= x1 < x2 <= W`` and ``0 <= y1 < y2 <= H``.
-        - labels (``Int64Tensor[N]``): the class label for each ground-truth box
-
-    The model returns a ``Dict[Tensor]`` during training, containing the classification and regression
-    losses.
-
-    During inference, the model requires only the input tensors, and returns the post-processed
-    predictions as a ``List[Dict[Tensor]]``, one for each input image. The fields of the ``Dict`` are as
-    follows, where ``N`` is the number of detections:
-
-        - boxes (``FloatTensor[N, 4]``): the predicted boxes in ``[x1, y1, x2, y2]`` format, with
-          ``0 <= x1 < x2 <= W`` and ``0 <= y1 < y2 <= H``.
-        - labels (``Int64Tensor[N]``): the predicted labels for each detection
-        - scores (``Tensor[N]``): the scores of each detection
-
-    For more details on the output, you may refer to :ref:`instance_seg_output`.
-
-    Example::
-
-        >>> model = torchvision.models.detection.retinanet_resnet50_fpn(weights=RetinaNet_ResNet50_FPN_Weights.DEFAULT)
-        >>> model.eval()
-        >>> x = [torch.rand(3, 300, 400), torch.rand(3, 500, 400)]
-        >>> predictions = model(x)
-
-    Args:
-        weights (:class:`~torchvision.models.detection.RetinaNet_ResNet50_FPN_Weights`, optional): The
-            pretrained weights to use. See
-            :class:`~torchvision.models.detection.RetinaNet_ResNet50_FPN_Weights`
-            below for more details, and possible values. By default, no
-            pre-trained weights are used.
-        progress (bool): If True, displays a progress bar of the download to stderr. Default is True.
-        num_classes (int, optional): number of output classes of the model (including the background)
-        weights_backbone (:class:`~torchvision.models.ResNet50_Weights`, optional): The pretrained weights for
-            the backbone.
-        trainable_backbone_layers (int, optional): number of trainable (not frozen) layers starting from final block.
-            Valid values are between 0 and 5, with 5 meaning all backbone layers are trainable. If ``None`` is
-            passed (the default) this value is set to 3.
-        **kwargs: parameters passed to the ``torchvision.models.detection.RetinaNet``
-            base class. Please refer to the `source code
-            <https://github.com/pytorch/vision/blob/main/torchvision/models/detection/retinanet.py>`_
-            for more details about this class.
-
-    .. autoclass:: torchvision.models.detection.RetinaNet_ResNet50_FPN_Weights
-        :members:
-    """
-    weights = RetinaNet_ResNet50_FPN_Weights.verify(weights)
-    weights_backbone = ResNet50_Weights.verify(weights_backbone)
-
-    if weights is not None:
-        weights_backbone = None
-        num_classes = _ovewrite_value_param("num_classes", num_classes, len(weights.meta["categories"]))
-    elif num_classes is None:
-        num_classes = 91
-
-    is_trained = weights is not None or weights_backbone is not None
-    trainable_backbone_layers = _validate_trainable_layers(is_trained, trainable_backbone_layers, 5, 3)
-    norm_layer = misc_nn_ops.FrozenBatchNorm2d if is_trained else nn.BatchNorm2d
-
-    backbone = resnet50(weights=weights_backbone, progress=progress, norm_layer=norm_layer)
-    # skip P2 because it generates too many anchors (according to their paper)
-    backbone = _resnet_fpn_extractor(
-        backbone, trainable_backbone_layers, returned_layers=[2, 3, 4], extra_blocks=LastLevelP6P7(256, 256)
-    )
-    model = RetinaNet(backbone, num_classes, **kwargs)
-
-    if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
-        if weights == RetinaNet_ResNet50_FPN_Weights.COCO_V1:
-            overwrite_eps(model, 0.0)
-
-    return model
-
-
 def retinanet_with_resnet50(
     *,
     num_classes: int,
@@ -977,6 +775,23 @@ def retinanet_with_resnet50(
     norm_layer: Literal["BatchNorm2d", "FrozenBatchNorm2d"],
     **kwargs: Any,
 ) -> RetinaNet:
+    """Creates a RetinaNet model with a ResNet50 backbone.
+
+    Args:
+        num_classes: Number of classes for classification.
+        anchors_sizes: Anchor sizes for feature maps.
+        anchors_scales: Anchor scales for feature maps.
+        anchors_ratios: Anchor aspect ratios for feature maps.
+        weights: Weights for the model. Defaults to None.
+        progress: If True, displays a progress bar of the download. Defaults to True.
+        weights_backbone: Backbone weights for the ResNet50 model. Defaults to "ResNet50_Weights.IMAGENET1K_V1".
+        trainable_backbone_layers: Number of trainable layers in the backbone. Defaults to None.
+        norm_layer: Type of normalization layer to use.
+        **kwargs: Additional keyword arguments passed to the RetinaNet constructor.
+
+    Returns:
+        RetinaNet: A RetinaNet model with a ResNet50 backbone.
+    """
     # weights = RetinaNet_ResNet50_FPN_Weights.verify(weights)
     weights_backbone = ResNet50_Weights.verify(weights_backbone)
 
@@ -1006,6 +821,6 @@ def retinanet_with_resnet50(
             else weights
         )
         if weights == RetinaNet_ResNet50_FPN_Weights.COCO_V1:
-            overwrite_eps(model, 0.0)
+            _detection_utils.overwrite_eps(model, 0.0)
 
     return model
