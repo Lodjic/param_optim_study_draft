@@ -14,6 +14,15 @@ from lt_lib.utils.regex_matcher import get_elements_with_regex
 def apply_nms_to_predictions(
     predictions_path: Path, nms_iou_threshold: float, outputs_dir: Path, disable_tqdm: bool | None = None
 ) -> None:
+    """
+    Apply non-maximum suppression (NMS) algorithm to predictions.
+
+    Args:
+        predictions_path: Path to the prediction file.
+        nms_iou_threshold: IoU threshold used in the NMS algorithm.
+        outputs_dir: Directory path to save the filtered predictions.
+        disable_tqdm: Whether to disable the tqdm progress bar. Default is None.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     predictions = pl.read_csv(predictions_path)
 
@@ -44,6 +53,15 @@ def apply_nms(
     outputs_dir: Path,
     configs: dict[str, BaseModel],
 ):
+    """
+    Task function applying the non-maximum suppression (NMS) algorithm to predictions.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        outputs_dir: Directory path to store the output data.
+        configs: Dictionary containing kwargs for the task. It should contain:
+            - "task_schema": Schema defining the parameters of the task.
+    """
     # Initialize model and dataloader
     _, initialized_params = initialize_task(
         inputs_dir=inputs_dir,

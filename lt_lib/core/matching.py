@@ -23,7 +23,15 @@ POLARS_AP_DF_SCHEMA = {
 
 
 def _upcast(t: np.ndarray) -> np.ndarray:
-    # Protects from numerical overflows in multiplications by upcasting to the equivalent higher type
+    """
+    Protects np.ndarray from numerical overflows in multiplications by upcasting to the equivalent higher type.
+
+    Args:
+        t: Input array to be upcasted.
+
+    Returns:
+        t: Upcasted array.
+    """
     if np.issubdtype(type(t), np.floating):
         return t if t.dtype in (np.float32, np.float64) else t.astype(np.float64)
     else:
@@ -32,16 +40,14 @@ def _upcast(t: np.ndarray) -> np.ndarray:
 
 def box_area(boxes: np.ndarray) -> np.ndarray:
     """
-    Computes the area of a set of bounding boxes, which are specified by their
-    (x1, y1, x2, y2) coordinates.
+    Computes the area of a set of boxes, which are specified by their (x1, y1, x2, y2) coordinates.
 
     Args:
-        boxes (np.ndarray[N, 4]): boxes for which the area will be computed. They
-            are expected to be in (x1, y1, x2, y2) format with
-            ``0 <= x1 < x2`` and ``0 <= y1 < y2``.
+        boxes: Boxes for which the area will be computed. They are expected to be in (x1, y1, x2, y2) format
+            with ``0 <= x1 < x2`` and ``0 <= y1 < y2``. Shape: [N, 4].
 
     Returns:
-        np.ndarray[N]: the area for each box
+        Array of length N specifying the area for each box.
     """
     boxes = _upcast(boxes)
     return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
@@ -49,17 +55,16 @@ def box_area(boxes: np.ndarray) -> np.ndarray:
 
 def boxes_iou(boxes1: np.ndarray, boxes2: np.ndarray) -> np.ndarray:
     """
-    Return intersection-over-union (Jaccard index) between two sets of boxes.
+    Return intersection-over-union (IoU, Jaccard index) between two sets of boxes.
 
-    Both sets of boxes are expected to be in ``(x1, y1, x2, y2)`` format with
-    ``0 <= x1 < x2`` and ``0 <= y1 < y2``.
+    Both sets of boxes are expected to be in ``(x1, y1, x2, y2)`` format with ``0 <= x1 < x2`` and ``0 <= y1 < y2``.
 
     Args:
-        boxes1 (np.ndarray[N, 4]): first set of boxes
-        boxes2 (np.ndarray[M, 4]): second set of boxes
+        boxes1: First set of boxes. Shape [N, 4].
+        boxes2: Second set of boxes. Shape [M, 4].
 
     Returns:
-        np.ndarray[N, M]: the NxM matrix containing the pairwise IoU values for every element in boxes1 and boxes2
+        iou: Matrix NxM containing the pairwise IoU values for every element in boxes1 and boxes2
     """
     area1 = box_area(boxes1)
     area2 = box_area(boxes2)
@@ -80,6 +85,21 @@ def match_predictions_and_gts_for_one_img(
     img_predictions_bboxes: np.ndarray | Tensor,
     img_gts_bboxes: np.ndarray | Tensor,
 ) -> tuple[np.ndarray[int], np.ndarray[int], np.ndarray[float]]:
+    """
+    Computes the Intersection over Union (IoU) matrix between detected bounding boxes and ground truth bounding boxes,
+    and then applies the Hungarian algorithm to match predictions with ground truths.
+
+    Args:
+        img_predictions_bboxes: Array-like object representing predicted bounding boxes with a shape (N, 4) for N
+            predictions, where each row is (x_min, y_min, x_max, y_max).
+        img_gts_bboxes: Array-like object representing ground truth bounding boxes of shape (M, 4) for M ground truths,
+            where each row is (x_min, y_min, x_max, y_max).
+
+    Returns:
+        predictions_idx: Array of integers representing the indices of matched predictions.
+        gts_idx: Array of integers representing the indices of matched ground truths.
+        iou_values: Array of floats representing the IoU values of matched predictions and ground truths.
+    """
     # Computes the iou matrix between detecions and gts
     if torch.is_tensor(img_predictions_bboxes):
         iou_matrix = box_ops.box_iou(img_predictions_bboxes, img_gts_bboxes)
@@ -99,6 +119,19 @@ def filter_ids_with_low_iou(
     ious: np.ndarray[float],
     matching_iou_threshold: float = 0.4,
 ):
+    """
+    Removes prediction and ground truth pairs with an Intersection over Union (IoU) below the specified threshold.
+
+    Args:
+        predictions_idx: Array representing the indices of matched predictions.
+        gts_idx: Array representing the indices of ground matched truths.
+        ious: Array of IoU scores between predictions and ground truth matched pairs.
+        matching_iou_threshold: Threshold for IoU scores below which predictions and ground truth pairs are filtered
+            out. Default is 0.4.
+
+    Returns:
+        Tuple containing filtered predictions indices, filtered ground truth indices, and filtered IoU scores.
+    """
     # Creates the filter mask to remove low iou matching
     sufficient_iou_mask = ious >= matching_iou_threshold
 
@@ -113,6 +146,22 @@ def batch_matching_during_training(
     confidence_columns: Literal["all", "max"] = "max",
     label_column_name: str = "label",
 ) -> pl.DataFrame:
+    """
+    Matches a batch of predictions and exports the results to a dataframe. The function was designed to operate within
+    the training loop.
+
+    Args:
+        imgs_path: List of image paths.
+        batch_predictions: List of dictionaries containing the predictions.
+        batch_gts: List of dictionaries containing the ground truth data.
+        with_bboxes: Whether to include bounding boxes in the dataframe. Defaults to False.
+        confidence_columns: Determines how to handle confidence columns, either keep them 'all' or just the 'max'.
+            Defaults to "max".
+        label_column_name: Name of the label column. Defaults to "label".
+
+    Returns:
+        AP_df: DataFrame containing the batch of matched data.
+    """
     # Exports the predictions to a polars Dataframe
     AP_df = export_predictions_to_df(imgs_path, batch_predictions, with_bboxes, confidence_columns, label_column_name)
     # Handles the corner case where AP_df is empty (because in this case it won't have any columns)
@@ -183,31 +232,3 @@ def batch_matching_during_training(
             AP_df = pl.concat([AP_df, unmatched_gts_df], how="vertical")
 
     return AP_df
-
-
-def training_matching_analysis(
-    predictions: list[dict[str, np.ndarray | Tensor]],
-    gts: list[dict[str, np.ndarray | Tensor]],
-    matching_iou_threshold: float = 0.4,
-):
-    # Metrics initialization
-    true_positives, false_positives, false_negatives = 0, 0, 0
-
-    # Matches images 1 by 1
-    for img_detections, img_gts in zip(predictions, gts):
-        # Computes matching
-        predictions_idx, gts_idx, ious = match_predictions_and_gts_for_one_img(
-            img_detections["boxes"],
-            img_gts["boxes"],
-        )
-        # Filters low iou matches
-        predictions_idx, _, _ = filter_ids_with_low_iou(predictions_idx, gts_idx, ious, matching_iou_threshold)
-
-        # Computes detection TP, FP and FN
-        img_tp = len(predictions_idx)
-        true_positives += img_tp
-        n_predictions, n_gts = img_detections["probable_labels"].shape[0], img_gts["labels"].shape[0]
-        false_positives += n_predictions - img_tp
-        false_negatives += n_gts - img_tp
-
-    return true_positives, false_positives, false_negatives

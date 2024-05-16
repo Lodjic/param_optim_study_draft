@@ -23,6 +23,20 @@ def export_predictions_to_df(
     confidence_columns: Literal["all", "max"] = "all",
     label_column_name: str = "probable_label",
 ):
+    """
+    Exports predictions to a Polars DataFrame.
+
+    Args:
+        imgs_path: List of image paths.
+        batch_predictions: List of dictionaries the predictions on one image.
+        with_bboxes: Whether to include bounding boxes within the dataframe. Defaults to True.
+        confidence_columns: Determines how to handle confidence columns, either keep them 'all' or just the 'max'.
+            Defaults to "max".
+        label_column_name: Name to give to the label column. Defaults to "probable_label".
+
+    Returns:
+        batch_predictions_df: A Polars DataFrame containing the predictions.
+    """
     # Instantiate a polars df to save the predictions
     batch_predictions_df = pl.DataFrame()
 
@@ -77,12 +91,14 @@ def model_predict(
     device: torch.device,
     outputs_dir: Path,
 ) -> None:
-    """Computes and print the test accuracy of the model passed
+    """
+    Makes predictions using the provided model on data from the given dataloader and saves the results to a CSV file.
 
     Args:
-        model (torchvision.models): PyTorch model from torchvision like a ResNet
-        dataloader (DataLoader): test DataLoader containing the test Dataset
-        device (torch.device): PyTorch device - 'cpu' or 'cuda'
+        model: The model used for prediction.
+        dataloader: The dataloader containing the data to predict on.
+        device: The PyTorch device to perform computations on.
+        outputs_dir: The directory path to save the predictions CSV file.
     """
     # Set model to evaluate mode
     model.eval()
@@ -118,7 +134,17 @@ def predict(
     inputs_dir: Path,
     outputs_dir: Path,
     configs: dict[str, BaseModel | ModelConfig],
-):
+) -> None:
+    """
+    Task function performing predictions on data using a model.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        outputs_dir: Directory path to store the output data.
+        configs: Dictionary containing kwargs for the task. It should contain:
+            - "task_schema": Schema defining the parameters of the task.
+            - "model_config": Configuration for the model.
+    """
     # Initialize model and dataloader
     initialized_objects, _ = initialize_task(
         inputs_dir=inputs_dir,

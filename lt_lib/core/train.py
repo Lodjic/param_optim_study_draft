@@ -11,21 +11,14 @@ from ray import train as ray_train
 from tqdm.auto import tqdm
 
 from lt_lib.core.initialize_task import initialize_task
-from lt_lib.core.matching import (
-    batch_matching_during_training,
-    training_matching_analysis,
-)
+from lt_lib.core.matching import batch_matching_during_training
 from lt_lib.core.metrics import (
     compute_level1_metrics_from_AP_df,
     compute_mAP_from_AP_df,
 )
 from lt_lib.data.datasets import send_inputs_and_targets_to_device
 from lt_lib.schemas.config_files_schemas import BaseYamlConfig, ModelConfig
-from lt_lib.utils.dict_utils import (
-    append_nested_dict_with_0,
-    flatten_dict,
-    keep_only_last_value_for_all_keys,
-)
+from lt_lib.utils.dict_utils import flatten_dict, keep_only_last_value_for_all_keys
 from lt_lib.utils.load_and_save import save_dict_as_json, save_pytorch_model_checkpoint
 from lt_lib.utils.log import (
     log_task_begin_or_end,
@@ -37,6 +30,22 @@ from lt_lib.utils.log import (
 def save_level1_metrics_values_to_metrics(
     metrics: dict, phase: Literal["train", "val"], tp: int, fp: int, fn: int, recall: float, precision: float
 ) -> dict:
+    """
+    Saves the values of level 1 metrics (True Positives, False Positives, False Negatives, recall and precision) to the
+    metrics dictionary for the specified phase.
+
+    Args:
+        metrics: Dictionary containing the metrics values of past epochs.
+        phase: The phase for which the metrics are being saved, either "train" or "val".
+        tp: Number of True Positives.
+        fp: Number of False Positives.
+        fn: Number of False Negatives.
+        recall: Recall value.
+        precision: Precision value.
+
+    Returns:
+        metrics: The updated metrics dictionary.
+    """
     metrics[phase]["level1"]["tp"].append(tp)
     metrics[phase]["level1"]["fp"].append(fp)
     metrics[phase]["level1"]["fn"].append(fn)
@@ -48,6 +57,18 @@ def save_level1_metrics_values_to_metrics(
 def save_level2_metrics_values_to_metrics(
     metrics: dict, phase: Literal["train", "val"], mAP: float, mAP50: float
 ) -> dict:
+    """
+    Saves the values of level 2 metrics (mAP and mAP50) to the metrics dictionary for the specific phase.
+
+    Args:
+        metrics: Dictionary containing the metrics values of past epochs.
+        phase: The phase for which the metrics are being saved, either "train" or "val".
+        mAP (float): The mean Average Precision value.
+        mAP50 (float): The mean Average Precision at the 0.5 matching IoU threshold.
+
+    Returns:
+        metrics: The updated metrics dictionary.
+    """
     metrics[phase]["level2"]["mAP50"].append(mAP50)
     metrics[phase]["level2"]["mAP"].append(mAP)
     return metrics
@@ -84,6 +105,33 @@ def train_model(
     disable_epoch_tqdm: bool | None,
     disable_batch_tqdm: bool | None,
 ) -> None:
+    """
+    Trains a given model on a certain number of epochs, using the provided data and configurations.
+
+    Args:
+        model: The neural network model to be trained.
+        optimizer: The optimizer used for updating the model's parameters.
+        lr_scheduler: Learning rate scheduler for scheduling the learning rate during training.
+        dataloaders: A dictionary containing  the dataloaders for training and validation phases.
+        device: The PyTorch device on which the model and data should be processed.
+        extra_objects: Additional objects required for training, such as epoch metrics.
+        n_epochs: Number of epochs on which to train the model.
+        loss_reduction_factor: Factor to reduce one of the two losses by.
+        loss_reduction_sign_indicator: Sign indicating which loss to reduce.
+        matching_iou_threshold: The threshold IoU value above which to consider a valid match.
+        inputs_dir: Directory path containing the input data.
+        model_saving_type: Method specifying how to save the model weights.
+        save_optimizer: Whether to save the optimizer state along with the model.
+        saving_frequency: Epoch frequency at which to save the model.
+        checkpoint_scoring_metric: Metric used for scoring and ranking different epoch checkpoints.
+        checkpoint_scoring_order: The order (min or max) indicating the ranking direction for the checkpoint ranking.
+        checkpoint_file_name: Name of the checkpoint file.
+        outputs_dir: Directory path to save outputs, metrics and checkpoints.
+        wandb_log_model_checkpoint: Whether to log model checkpoints to Weights & Biases.
+        manual_seed: Seed for random number generation.
+        disable_epoch_tqdm: Whether to disable the tqdm progress bar for epochs.
+        disable_batch_tqdm: Whether to disable the tqdm progress bar for batches.
+    """
     # Sets manual_seed if provided
     if manual_seed:
         torch.manual_seed(manual_seed)
@@ -155,13 +203,6 @@ def train_model(
                     batch_AP_df.drop_in_place("id")
                     epoch_AP_df = pl.concat([epoch_AP_df, batch_AP_df], how="vertical")
 
-                # It dections where computed, we can compute matching and stores tp, fp and fn
-                # if model.process_detections_during_training:
-                #     tp, fp, fn = training_matching_analysis(detections, targets, matching_iou_threshold)
-                #     metrics[phase]["level1"]["tp"][-1] += tp
-                #     metrics[phase]["level1"]["fp"][-1] += fp
-                #     metrics[phase]["level1"]["fn"][-1] += fn
-
             # Stores loss value
             epoch_loss = running_loss / len(dataloaders[phase].dataset)
             metrics[phase]["loss"].append(epoch_loss)
@@ -175,17 +216,6 @@ def train_model(
                 metrics = save_level2_metrics_values_to_metrics(metrics, phase, *AP_metrics_values)
                 level1_metrics_values = compute_level1_metrics_from_AP_df(epoch_AP_df, matching_iou_threshold)
                 metrics = save_level1_metrics_values_to_metrics(metrics, phase, *level1_metrics_values)
-
-            # If detections where computed, stores the recall and precision
-            # if model.process_detections_during_training:
-            #     metrics[phase]["level1"]["recall"].append(
-            #         metrics[phase]["level1"]["tp"][-1]
-            #         / (metrics[phase]["level1"]["tp"][-1] + metrics[phase]["level1"]["fn"][-1])
-            #     )
-            #     metrics[phase]["level1"]["precision"].append(
-            #         metrics[phase]["level1"]["tp"][-1]
-            #         / (metrics[phase]["level1"]["tp"][-1] + metrics[phase]["level1"]["fp"][-1])
-            #     )
 
             # If we are in training phase and there is a lr_scheduler then we should increment its step
             if phase == "train":
@@ -307,6 +337,16 @@ def train(
     outputs_dir: Path,
     configs: dict[str, BaseYamlConfig | ModelConfig],
 ) -> None:
+    """
+    Task function training a model using provided inputs and configurations.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        outputs_dir: Directory path to store the output data.
+        configs: Dictionary containing kwargs for the task. It should contain:
+            - "task_schema": Schema defining the parameters of the task.
+            - "model_config": Configuration for the model.
+    """
     # Initialize model, optimizer, lr_scheduler, dataloaders and train_params
     initialized_objects, initialized_params = initialize_task(
         inputs_dir=inputs_dir,
@@ -333,11 +373,3 @@ def train(
 
     # Log end of training
     log_task_begin_or_end("train", "end", "lower")
-
-    # If a wandb_run was initialized, then logs best model to wandb
-    # if wandb.run:
-    # wandb_log_model(
-    #     chkpt_file_path=f"{outputs_dir}/{initialized_params['task_params']['checkpoint_file_name']}-best.tar",
-    #     artifact_type=f"best_{initialized_params["task_params"]["model_saving_type"]}",
-    #     artifact_name=f"best_{initialized_params["task_params"]["model_saving_type"]}",
-    # )

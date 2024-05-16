@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import numpy as np
 import polars as pl
 from pydantic import BaseModel
 
@@ -13,6 +12,17 @@ from lt_lib.utils.regex_matcher import get_elements_with_regex
 def thresholding_confidence_per_label(
     predictions: pl.DataFrame, threshold_per_label: dict[float, float]
 ) -> pl.DataFrame:
+    """
+    Applies thresholding on confidence scores per label.
+    It filters some bboxes and replaces the 'probable_label' class id of some other based on the thresholds indicated.
+
+    Args:
+        predictions: DataFrame containing predicted bboxes with their confidence scores and the most probable class.
+        threshold_per_label: Dictionary containing threshold value for each class.
+
+    Returns:
+        predicitons: DataFrame with thresholded bboxes: some are filtered other see their class id modified.
+    """
     # For each class, assigns confidence below threshold to 0 in aliases columns
     for label in threshold_per_label.keys():
         predictions = predictions.with_columns(
@@ -63,6 +73,17 @@ def thresholding_confidence_per_label(
 def thresholding_condifdence_per_label_np(
     predictions: pl.DataFrame, threshold_per_label: dict[float, float]
 ) -> pl.DataFrame:
+    """
+    Applies thresholding on confidence scores per label. It is the numpy version of the function with the same name.
+    It filters some bboxes and replaces the 'probable_label' class id of some other based on the thresholds indicated.
+
+    Args:
+        predictions: DataFrame containing predicted bboxes with their confidence scores and the most probable class.
+        threshold_per_label: Dictionary containing threshold value for each class.
+
+    Returns:
+        predicitons: DataFrame with thresholded bboxes: some are filtered other see their class id modified.
+    """
     # For each class, assigns confidence below threshold to 0
     for label in threshold_per_label.keys():
         predictions = predictions.with_columns(
@@ -99,7 +120,21 @@ def thresholding_predictions_confidence(
     threshold: dict[float, float] | dict[str, float] | float,
     gts_path: str | Path | None,
     outputs_dir: Path,
-):
+) -> None:
+    """
+    Function encapsulating the thresholding on confidence scores per label function and saving the returned DataFrame.
+
+    Args:
+        predictions_path: Path to the raw prediction CSV file.
+        threshold: Threshold value(s) for the confidence scores. Can be specified as a single float value,
+            a dictionary mapping label names to threshold values, or a dictionary mapping label ids to threshold values.
+        gts_path: Path to the ground truth CSV file. Required if threshold is specified as label names.
+        outputs_dir: Directory to save the thresholded predictions.
+
+    Raises:
+        ValueError: If gts_path is None and threshold is specified as label names, indicating label names cannot be
+            inferred without ground truth data.
+    """
     # Load predictions csv files
     predictions = pl.read_csv(predictions_path)
 
@@ -133,7 +168,16 @@ def confidence_thresholding(
     inputs_dir: Path,
     outputs_dir: Path,
     configs: dict[str, BaseModel],
-):
+) -> None:
+    """
+    Task function applying confidence thresholding to predictions.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        outputs_dir: Directory path to store the output data.
+        configs: Dictionary containing kwargs for the task. It should contain:
+            - "task_schema": Schema defining the parameters of the task.
+    """
     # Initialize model and dataloader
     _, initialized_params = initialize_task(
         inputs_dir=inputs_dir,

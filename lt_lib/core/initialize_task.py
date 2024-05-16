@@ -25,7 +25,29 @@ from lt_lib.utils.load_and_save import (
 ######################################
 
 
-def extract_task_init_params(task_config: TrainTaskConfig | PredictTaskConfig, model_config: ModelConfig | None):
+def extract_task_init_params(
+    task_config: TrainTaskConfig | PredictTaskConfig, model_config: ModelConfig | None
+) -> dict[str, Any]:
+    """
+    Extracts the different initialization parameters from a task config and eventually a model config.
+
+    Args:
+        task_config: Configuration object for the task, either `TrainTaskConfig` or `PredictTaskConfig`.
+        model_config: Configuration object for the model, defaults to None.
+
+    Returns:
+        init_params_dict: A dictionary containing the initialization parameters for the task, eventually the model
+            initialization parameters, the dataloaders initialization parameters, the optimizer initialization
+            parameters and the scheduler initialization parameters.
+
+    Note:
+        The returned dictionary includes the following keys:
+        - 'model_init_params': Initialization parameters for the model.
+        - 'dataloaders_init_params': Initialization parameters for dataloaders.
+        - 'optimizer_init_params': Initialization parameters for the optimizer.
+        - 'lr_scheduler_init_params': Initialization parameters for the learning rate scheduler.
+        - 'task_params': Task-specific parameters excluding parameters related to model, optimizer, and scheduler.
+    """
     init_params_dict = {}
 
     # Get model initialization params if a model is passed
@@ -85,11 +107,31 @@ def extract_task_init_params(task_config: TrainTaskConfig | PredictTaskConfig, m
 def override_saved_model_path(
     inputs_dir: Path, root_outputs_dir: Path, model_input: str, model_init_params: dict[str, Any]
 ) -> dict[str, Any]:
+    """
+    Overrides the saved checkpoint path depending on model inputs model intialization parameters.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        root_outputs_dir: Outputs directory root path.
+        model_input: Input string specifying model loading type, saved model directory, and model suffix.
+            Format: "<model_loading_type>:<saved_model_directory>:<model_suffix>".
+        model_init_params: Dictionary containing the model initialization parameters.
+
+    Returns:
+        dict[str, Any]: Updated model initialization parameters after overriding the saved model path.
+
+    Notes:
+        - If the model_input indicates that the model is in 'inputs_directory', the function looks for the
+            'saved_checkpoint_path' key in the 'model_init_params'. If it is empty, it looks for a saved model in
+            the 'inputs_dir'.
+        - If the model_input does not indicates that the model is in 'inputs_directory', it assumes the model is saved
+            in the output of another task and search for it.
+    """
     model_input = model_input.split(":")
     saved_model_dir = model_input[1]
     model_suffix = model_input[2] if len(model_input) == 3 else "best"
 
-    # If model is saved in the inputs_dir we override the saved_model_pat only if it was not passed in the config
+    # If model is saved in the inputs_dir we override the saved_model_path only if it was not passed in the config
     if saved_model_dir == "inputs_directory":
         if model_init_params["saved_checkpoint_path"] is None:
             model_init_params["saved_checkpoint_path"] = str(list(inputs_dir.glob("*.tar"))[0])
@@ -108,6 +150,19 @@ def override_saved_model_path(
 def override_dataframe_path(
     inputs_dir: Path, root_outputs_dir: Path, df_input: str, task_params: dict[str, Any]
 ) -> dict[str, Path]:
+    """
+    Overrides the dataframe path based on input parameters.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        root_outputs_dir: Outputs directory root path.
+        df_input: A string representing the type, the directory name and the function (train, val or test) of the
+            dataframe. Format: "type:directory:function".
+        task_params: A dictionary containing the task parameters.
+
+    Returns:
+        task_params: A dictionary with the updated dataframe path.
+    """
     df_input = df_input.split(":")
     df_type = df_input[0]
     df_dir = df_input[1]
@@ -131,7 +186,20 @@ def override_dataframe_path(
 
 def override_config_paths_with_inputs(
     inputs_dir: Path, root_outputs_dir: Path, inputs: str, init_params_dict: dict[str, Any]
-):
+) -> dict[str, Any]:
+    """
+    Overrides configuration paths (both model and dataframe ones) based on inputs specification.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        root_outputs_dir: Outputs directory root path.
+        input: Comma-separated string of input types.
+        init_params_dict: A dictionary containing the all initialization parameters necesarry for a task. It can include
+            model, dataloaders, optimizer and scheduler initialization parameters.
+
+    Returns:
+        init_params_dict: Updated initialization parameters dictionary with overridden paths.
+    """
     for input in inputs.split(","):
         # If 'model' keyword is in the task inputs the saved_checkpoint_path needs to be overriden
         if "model" in input.split(":")[0]:
@@ -159,6 +227,22 @@ def initialize_optimizer(
     optimizer_params: dict[str, Any] = {},
     checkpoint_path: Path | None = None,
 ):
+    """
+    Initialize optimizer for training a neural network model.
+
+    Args:
+        model: A torch.nn.Module instance representing the neural network model.
+        optimizer: Name of the optimizer to be used. Default to None.
+        optimizer_params: Dictionary containing parameters for the optimizer. Default is an empty dictionary.
+        checkpoint_path: Path to a checkpoint file to resume training from. Default to None.
+
+    Returns:
+        optimizer: Initialized optimizer.
+        optimizer_resumed: Boolean indicating whether the optimizer was resumed from a checkpoint.
+
+    Raises:
+        ValueError: If the specified optimizer is not implemented.
+    """
     optimizer_name = optimizer
 
     if optimizer == "Adam":
@@ -187,6 +271,18 @@ def initialize_optimizer(
 def initialize_lr_scheduler(
     optimizer: str | None = None, lr_scheduler: str | None = None, lr_scheduler_params: dict[str, Any] = {}
 ):
+    """
+    Initializes a learning rate scheduler.
+
+    Args:
+        optimizer: The optimizer for which the scheduler is to be initialized. Default to None.
+        lr_scheduler: The name of learning rate scheduler to be initialized. Default to None.
+        lr_scheduler_params: Dictionary containing the parameters for the learning rate scheduler. Default is an empty
+            dictionary.
+
+    Returns:
+        lr_scheduler: The initialized learning rate scheduler, or None if no scheduler is specified.
+    """
     if lr_scheduler:
         if lr_scheduler == "ReduceLROnPlateau":
             lr_scheduler = ReduceLROnPlateau(optimizer, **lr_scheduler_params)
@@ -201,7 +297,21 @@ def initialize_training_objects(
     checkpoint_path: Path | None = None,
     checkpoint_scoring_metric: str | None = None,
     checkpoint_scoring_order: str | None = None,
-):
+) -> tuple[dict[str, Any], bool]:
+    """
+    Initializes training objects for deep learning model training. If a `checkpoint_path` is passed, it loads metrics
+    from the checkpoint file. If not, it initializes metrics from scratch.
+
+    Args:
+        checkpoint_path: Path to the checkpoint file. Default to None.
+        checkpoint_scoring_metric: Metric used for scoring and ranking different epoch checkpoints. Default to None.
+        checkpoint_scoring_order: The order (min or max) indicating the ranking direction for the checkpoint ranking.
+            Default to None.
+
+    Returns:
+        training_objects: Dictionary containing the objects and information necessary to the training.
+        metrics_resumed: Indicates whether metrics were resumed from the checkpoint or not.
+    """
     ORDER_DISPATCHER = {"min": [min, np.inf], "max": [max, 0]}
 
     # Boolean to know if metrics dict was resumed
@@ -258,8 +368,31 @@ def initialize_task(
     outputs_dir: Path,
     task_schema: TaskSchema,
     model_config: ModelConfig | None = None,
-) -> Tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    Initializes a task with the provided configuration (input and output directories, task schema, and optionally a
+    model config).
 
+    Args:
+        inputs_dir: Directory path containing the input data.
+        outputs_dir: Directory path to save the output data.
+        task_schema: TaskSchema defining the complete task configuration.
+        model_config: ModelConfig configuration for the model. Default to None.
+
+    Returns:
+        initialized_objects: Dictionary of initialized objects (e.g. the model, the optimizer etc.).
+        initialized_params: Dictionary of initialized parameters (e.g. task parameters etc.).
+
+    Raises:
+        ValueError: If the model config file is missing and needed for a 'train' or 'predict' task.
+
+    Note:
+        This function initializes various objects and parameters based on the provided inputs.
+        It also saves the task initialization parameters for debugging purposes.
+        Specific actions are performed for 'train' or 'predict' tasks, including model instantiation,
+        optimizer initialization, and optionally loading metrics and a checkpoint file.
+
+    """
     # Gets the initialization parameters
     init_params_dict = extract_task_init_params(task_schema.config, model_config)
     init_params_dict = override_config_paths_with_inputs(

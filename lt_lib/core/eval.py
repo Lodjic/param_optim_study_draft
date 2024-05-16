@@ -5,7 +5,6 @@ from pathlib import Path
 import polars as pl
 import ray.train as ray_train
 import wandb
-from loguru import logger
 from pydantic import BaseModel
 from tqdm.auto import tqdm
 
@@ -28,7 +27,21 @@ def match_and_compute_eval_one_img(
     predictions: pl.DataFrame,
     label_to_label_name_dict: dict[str, str],
     matching_iou_threshold: float = 0.4,
-):
+) -> tuple[str, dict[str, dict[str, float | dict[str, float]]]]:
+    """
+    Computes evaluation metrics for a single image.
+
+    Args:
+        img_name: Name of the image.
+        gts: DataFrame containing the ground truth bounding boxes.
+        predictions: DataFrame containing predicted bounding boxes.
+        label_to_label_name_dict: Dictionary mapping class ids to class label names.
+        matching_iou_threshold: Threshold for matching predicted and ground truth bounding boxes based on the IoU.
+            Defaults to 0.4.
+
+    Returns:
+        img_name, img_metrics: The image name and the computed metrics in the form of a dictionary.
+    """
     # Filter image gts and predictions
     img_gts = gts.filter(pl.col("img_name") == img_name)
     img_predictions = predictions.filter(pl.col("img_name") == img_name)
@@ -51,7 +64,7 @@ def match_and_compute_eval_one_img(
     img_metrics = compute_img_metrics(
         img_gts, img_predictions, img_gts_matched_idx, img_predictions_matched_idx, label_to_label_name_dict
     )
-    return [img_name, img_metrics]
+    return img_name, img_metrics
 
 
 def match_and_compute_eval(
@@ -61,11 +74,21 @@ def match_and_compute_eval(
     matching_iou_threshold: float = 0.4,
     custom_metrics: dict[str, str] | None = None,
     disable_tqdm: bool | None = None,
-):
+) -> None:
+    """
+    Computes the evaluation metrics for all the images based on the prediction CSV file and save it to a JSON file.
+
+    Args:
+        predictions_path: Path to the prediction CSV file.
+        gts_path: Path to the ground truth CSV file.
+        outputs_dir: Directory path to save the evaluation results.
+        matching_iou_threshold: IoU threshold for matching predictions to ground truths. Defaults to  0.4.
+        custom_metrics: Dictionary of custom metrics to compute. Defaults to None.
+        disable_tqdm: Whether to disable the tqdm progress bar. Defaults to None.
+    """
     # Load gts and predictions csv files
     predictions = pl.read_csv(predictions_path)
     gts = pl.read_csv(gts_path).cast(POLARS_GTS_SCHEMA, strict=True)
-
     label_to_label_name_dict = load_json_as_dict(Path(gts_path).parent / "label_to_label_name.json")
 
     # Get the image names list
@@ -83,23 +106,19 @@ def match_and_compute_eval(
 
     # Computes global metrics
     global_results = compute_global_results(metrics["per_img_results"])
-
     # Adds custom metrics if there are some
     if custom_metrics:
         global_results = add_custom_metrics(global_results, custom_metrics)
-
     # Saves global_metrics to metrics dict
     metrics["global_results"] = global_results
 
-    # Save eval locally
+    # Saves the evaluation metrics computed to a json file
     save_dict_as_json(file_path=outputs_dir / "eval.json", dictionary=metrics)
 
     ### Ray and wandb logging
-
     # Flattens global_metrics dict for reporting if necessary
     if ray_train.context.session.get_session() or wandb.run:
         flattened_global_results = flatten_dict(metrics["global_results"])
-
     # If wandb is running, then logs interesting metrics
     if wandb.run:
         metrics_to_keep = get_elements_with_regex(
@@ -108,7 +127,6 @@ def match_and_compute_eval(
             unique=False,
         )
         wandb.log({m: flattened_global_results[m] for m in metrics_to_keep})
-
     # If Ray-tune is operating, then logs the metrics to it
     if ray_train.context.session.get_session():
         ray_train.report(flattened_global_results)
@@ -122,7 +140,20 @@ def match_and_compute_eval_multi_process(
     processes: int = 6,
     chunksize: int = 20,
     disable_tqdm: bool | None = None,
-):
+) -> None:
+    """
+    Computes the evaluation metrics for all the images based on the prediction CSV file across multiple processes and
+    save it to a JSON file. It is the same function as the function of the same name but in a multi-processed version.
+
+    Args:
+        predictions_path: Path to the prediction CSV file.
+        gts_path: Path to the ground truth CSV file.
+        outputs_dir: Directory path to save evaluation results.
+        matching_iou_threshold: IoU threshold for matching predictions to ground truths. Defaults to 0.4.
+        processes: Number of processes to use. Defaults to 6.
+        chunksize: Chunk size for multiprocessing. Defaults to 20.
+        disable_tqdm: Whether to disable the tqdm progress bar. Defaults to None.
+    """
     # Load gts and predictions csv files
     predictions = pl.read_csv(predictions_path)
     gts = pl.read_csv(gts_path).cast(POLARS_GTS_SCHEMA, strict=True)
@@ -163,6 +194,15 @@ def evaluation(
     outputs_dir: Path,
     configs: dict[str, BaseModel],
 ):
+    """
+    Task function evaluating a model based on a prediction and ground truth file.
+
+    Args:
+        inputs_dir: Directory path containing the input data.
+        outputs_dir: Directory path to store the output data.
+        configs: Dictionary containing kwargs for the task. It should contain:
+            - "task_schema": Schema defining the parameters of the task.
+    """
     # Initialize model and dataloader
     _, initialized_params = initialize_task(
         inputs_dir=inputs_dir,

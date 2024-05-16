@@ -13,6 +13,17 @@ from lt_lib.utils.shuting_yard_algorithm import shunting_yard_custom
 
 
 def filter_low_iou_matches_of_AP_df(AP_df: pl.DataFrame, matching_iou_threshold: float) -> pl.DataFrame:
+    """
+    Adjusts attributes of matched predictions with an Intersection over Union (IoU) below a given threshold.
+
+    Args:
+        AP_df: AP dataframe, a dataframe containing predictions and associated specific attribute columns (e.g. 'iou',
+        'match', 'correct_match' etc.).
+        matching_iou_threshold: The threshold IoU value above which to consider a valid match.
+
+    Returns:
+        A dataframe with low IoU matches attributes ('match' and 'correct_match') adjusted.
+    """
     # Finds matched predictions with iou below threshold
     too_low_iou_ids = AP_df.filter(
         pl.col("match") == 1, pl.col("iou").is_between(0, matching_iou_threshold, closed="none")
@@ -38,6 +49,20 @@ def filter_low_iou_matches_of_AP_df(AP_df: pl.DataFrame, matching_iou_threshold:
 def compute_mAP_from_AP_df(
     AP_df: pl.DataFrame, labels_to_consider: list[int] | list[str], label_to_label_name: dict[int:str] | None = None
 ) -> tuple[float]:
+    """
+    Computes the mean Average Precision (mAP) of a dataset from an AP dataframe, a specific dataframe containing
+    specific attribute columns.
+
+    Args:
+        AP_df: AP dataframe, a dataframe containing predictions and associated specific attribute columns (e.g. 'match',
+            'correct_match' etc.).
+        labels_to_consider: List of labels (either integers or strings) to consider for the mAP computation.
+        label_to_label_name: Dictionary mapping class ids to class label names. Defaults to None.
+
+    Returns:
+        The mean Average Precision (mAP)
+        The mean Average Precision value for the IoU threshold of 0.5 (mAP50).
+    """
     if isinstance(labels_to_consider[0], str):
         label_name_to_label = {v: k for (k, v) in label_to_label_name.items()}
         labels_to_consider = [label_name_to_label[label_name] for label_name in labels_to_consider]
@@ -75,6 +100,22 @@ def compute_level1_metrics_from_AP_df(
     AP_df: pl.DataFrame,
     matching_iou_threshold: float,
 ):
+    """
+    Computes level 1 metrics from the provided AP dataframe, a specific dataframe containing specific attribute columns.
+    Matches are considered correct match only if their IoU is superior to the matching_iou_threshold.
+
+    Args:
+        AP_df: AP_df: AP dataframe, a dataframe containing predictions and associated specific attribute columns (e.g. 'match',
+            'correct_match' etc.).
+        matching_iou_threshold: The threshold IoU value above which to consider a valid match.
+
+    Returns:
+        tp: True positives.
+        fp: False positives
+        fn: False negatives.
+        recall: Recall.
+        precision: Precision.
+    """
     # Filters low iou matches
     AP_df = filter_low_iou_matches_of_AP_df(AP_df, matching_iou_threshold)
 
@@ -96,6 +137,15 @@ def compute_level1_metrics_from_AP_df(
 
 
 def correct_and_add_metrics_to_global_results_nested_dict(nested_dict: dict) -> dict:
+    """
+    Recusrive function correcting metric values and adding new metrics to a global results nested dictionary.
+
+    Args:
+        nested_dict: The global results nested dictionary.
+
+    Returns:
+        nested_dict: The updated global results nested dictionary with added metrics.
+    """
     if "recall" in nested_dict.keys():
         # Gets label_name tps, fps and fns
         tp = nested_dict["tp"]
@@ -138,6 +188,15 @@ def correct_and_add_metrics_to_global_results_nested_dict(nested_dict: dict) -> 
 
 
 def compute_global_results(per_img_results: dict) -> dict:
+    """
+    Computes global results metrics from the aggregation of per-image results.
+
+    Args:
+        per_img_results: A dictionary containing per-image results.
+
+    Returns:
+        metrics: A dictionary containing the aggregated global results.
+    """
     img_name_list = list(per_img_results.keys())
     metrics = copy.deepcopy(per_img_results[img_name_list[0]])
 
@@ -150,6 +209,17 @@ def compute_global_results(per_img_results: dict) -> dict:
 
 
 def add_custom_metrics(global_results: dict[str, dict[str, dict[str, float]]], custom_metrics: dict[str, str]):
+    """
+    Calculates custom metrics based on provided expressions and add them to global results.
+
+    Args:
+        global_results: The global results nested dictionary.
+        custom_metrics: A dictionary where keys are custom metric names and values are expressions in string format
+            that can include existing metric names.
+
+    Returns:
+        dict: The global results nested dictionary updated with the custom metrics.
+    """
     flattened_global_results = flatten_dict(global_results)
 
     for metric_name, expression in custom_metrics.items():
@@ -167,6 +237,19 @@ def compute_img_metrics(
     img_predictions_matched_idx: list,
     label_to_label_name_dict: dict[str, str],
 ) -> dict[str, dict[str, float | dict[str, float]]]:
+    """
+    Computes level1 and level2 metrics for one image based on the matched predictions and ground truths.
+
+    Args:
+        img_gts: Ground truth of the image.
+        img_predictions: Predictions made by a model on the image.
+        img_gts_matched_idx: List of the ground truth indices that were matched to a prediction.
+        img_predictions_matched_idx: List of the prediction indices that were matched to a ground truth.
+        label_to_label_name_dict: Dictionary mapping class ids to class label names.
+
+    Returns:
+        metrics: A dictionary containing the computed metrics.
+    """
     # Keeps only 'id' and 'probable_label' columns. Casting is important to not get an error in case the
     # img_predictions dataframe is empty.
     img_predictions = img_predictions[["id", "probable_label"]].cast({"id": pl.UInt16, "probable_label": pl.Int32})

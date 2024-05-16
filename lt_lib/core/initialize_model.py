@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Literal
 
 import polars as pl
 import torch
@@ -22,14 +22,30 @@ def initialize_model(
     # Data params
     root_data_dir: Path,
     # Model params
-    model: str,
+    model: Literal["retinanet"],
     model_parameters: dict[str, list[float] | tuple[float]],
     trainable_backbone_layers: int,
     # Weights loading params
     saved_checkpoint_path: str | Path | None,
-    model_loading_type: str | None,
-    weights_backbone: str | None,
-) -> Tuple[torch.nn.Module, Path | None]:
+    model_loading_type: Literal["model", "model_state_dict"] | None,
+    weights_backbone: Literal["retinanet"] | None,
+) -> tuple[torch.nn.Module, Path | None]:
+    """
+    Initializes a neural network model with the specified parameters.
+
+    Args:
+        root_data_dir: Data directory root path.
+        model: Model architecture name.
+        model_parameters: Dictionary containing the model parameters.
+        trainable_backbone_layers: Number of trainable backbone layers.
+        saved_checkpoint_path: Path to a saved checkpoint file from which to restore the model. Default to None.
+        model_loading_type: Str specifying how to load the model. Default to None.
+        weights_backbone: Name of the backbone weights to load. Default to None.
+
+    Returns:
+        model: The initialized model
+        saved_checkpoint_path: The path to the saved checkpoint file used, if any.
+    """
     # Get the number of classes from the gts
     gts_csv_path = root_data_dir / "train/annotations/gts.csv"
     gts = pl.read_csv(gts_csv_path)
