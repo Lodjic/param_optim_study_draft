@@ -270,7 +270,7 @@ def get_bboxes_df_from_one_synthetic_xml(
         xml_path: The path to the synthetic XML file.
         img_name: The name of the image.
         clip: Whether to clip the bounding boxes to image boundaries. Defaults to True.
-        wingspan_label_bins: List of wingspan label bins. Default bins values are obtained from the wingspan
+        wingspan_label_bins: Bins for wingspan labeling. Default bins values are obtained from the wingspan
             thresholds given by the rareplanes public user guide. Bin values are divided by the image's resolution.
             Defaults to [0, 15, 36].
         imgs_resolution: The resolution of the images in meters per pixel. Defaults to 0.3.
