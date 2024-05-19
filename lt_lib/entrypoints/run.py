@@ -8,6 +8,15 @@ from lt_lib.utils.log import initialize_logger
 
 
 def get_cli_args(parser: argparse.ArgumentParser):
+    """
+    Configures the command line arguments using the provided ArgumentParser.
+
+    Args:
+        parser: Instance of ArgumentParser to which the arguments are added.
+
+    Returns:
+        parser: ArgumentParser configured with the specified arguments.
+    """
     parser.add_argument(
         "-id",
         "--inputs-directory",
@@ -57,7 +66,7 @@ def get_cli_args(parser: argparse.ArgumentParser):
 
 @dataclass
 class RunCliArgs:
-    """Dataclass to be able to launch training in notebooks"""
+    """Dataclass to be able to launch training in notebooks in a similar fashion to the CLI arguments"""
 
     inputs_directory: str
     outputs_directory: str
@@ -68,6 +77,12 @@ class RunCliArgs:
 
 
 def run(args):
+    """
+    Runs the desired tasks found specified to the TaskOrchestrator.
+
+    Args:
+        args: A RunCliArgs object containing all the arguments for the task(s) run.
+    """
     # Intitalizes the logger
     initialize_logger(Path(args.outputs_directory), args.console_log_level)
 
@@ -85,11 +100,13 @@ def run(args):
 
 
 def main():
+    """Main function that executes the run based on command-line arguments."""
     parser = argparse.ArgumentParser()
     parser = get_cli_args(parser)
     args = parser.parse_args()
     run(args)
 
 
+# For the entrypoint CLI call
 if __name__ == "__main__":
     main()

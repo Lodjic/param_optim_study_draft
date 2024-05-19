@@ -17,6 +17,15 @@ from lt_lib.schemas.config_files_schemas import OptimizationConfig, RunConfig
 
 
 def get_cli_args(parser: argparse.ArgumentParser):
+    """
+    Configures the command line arguments using the provided ArgumentParser.
+
+    Args:
+        parser: Instance of ArgumentParser to which the arguments are added.
+
+    Returns:
+        parser: ArgumentParser configured with the specified arguments.
+    """
     parser.add_argument(
         "-id",
         "--inputs-directory",
@@ -83,7 +92,7 @@ def get_cli_args(parser: argparse.ArgumentParser):
 
 @dataclass
 class OptimizationCliArgs:
-    """Dataclass to be able to launch training in notebooks"""
+    """Dataclass to be able to launch optimization in notebooks in a similar fashion to the CLI arguments"""
 
     inputs_directory: str
     outputs_directory: str
@@ -95,11 +104,14 @@ class OptimizationCliArgs:
     console_log_level: str = "DEBUG"
 
 
-def optimization(args):
+def optimization(args: OptimizationCliArgs) -> None:
+    """
+    Runs an optimization experiment using Ray-Tune.
+
+    Args:
+        args: A OptimizationCliArgs object containing all the arguments for the optimization.
+    """
     # Gets objects from python optimization config
-    # param_space, tune_config, run_config, on_trial_callback_type, on_experiment_callback_type, resources = (
-    #     OptimizationConfig().from_py_file(args.optimization_config_path)
-    # )
     optim_config_objects = OptimizationConfig().from_py_file(args.optimization_config_path)
     run_config = optim_config_objects["run_config"]
 
@@ -176,22 +188,13 @@ def optimization(args):
 
 
 def main():
+    """Main function that executes the optimization based on command-line arguments."""
     parser = argparse.ArgumentParser()
     parser = get_cli_args(parser)
     args = parser.parse_args()
     optimization(args)
 
 
+# For the entrypoint CLI call
 if __name__ == "__main__":
-    # main()
-
-    args = OptimizationCliArgs(
-        inputs_directory="/Users/loic/Documents/KTH/2023-2024/Master-Thesis/datasets/dataset_test",
-        outputs_directory="/Users/loic/Documents/KTH/2023-2024/Master-Thesis/outputs/outputs_test",
-        model_config_path="configs/model_config_test.yaml",
-        config_path="configs/full_config_test.yaml",
-        optimization_config_path="configs/config.py",
-        # resume=True,
-    )
-
-    optimization(args)
+    main()
