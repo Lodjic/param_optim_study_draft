@@ -23,8 +23,17 @@ from lt_lib.utils.log import initialize_logger, log_task_begin_or_end
 from lt_lib.utils.regex_matcher import get_elements_with_regex
 
 
-def modify_trial_model_config_to_restore_from_checkpoint(trial_dir: Path):
-    ### Gets lastly saved checkpoint
+def modify_trial_model_config_to_restore_from_checkpoint(trial_dir: Path) -> None:
+    """
+    Modifies the current trial model config file to restore training from the last saved checkpoint.
+
+    Args:
+        trial_dir: The directory containing the trial's info, notably the checkpoints and configuration files.
+
+    Raises:
+        ValueError: If no checkpoint is found in the trial directory.
+    """
+    ### Gets last saved checkpoint
     # Finds the last checkpoint in alphabetic order if there are more than 1 checkpoint
     checkpoint_list = list(trial_dir.rglob("*.tar"))
     if len(checkpoint_list) == 0:
@@ -75,6 +84,19 @@ def creates_trial_configs_from_sampled_parameters(
     trial_dir: Path,
     trial_output_dir: Path,
 ):
+    """
+    Creates the trial configuration files from the default configuration files and sampled parameters.
+
+    Args:
+        base_config_path: The path to the base/default configuration file.
+        base_model_config_path: The path to the base model configuration file.
+        sampled_params: A dictionary containing the sampled parameters.
+        trial_dir: The trial directory path.
+        trial_output_dir: The trial output directory in which to also copy the trial configurations.
+
+    Returns:
+        A tuple containing the paths of the trial configuration file and model configuration file.
+    """
     ### Creates updated version of the trial configs for the ray_results directory
     # Creates a trial config and model config path in the ray_results directory
     trial_config_dir = trial_dir / "configs"
@@ -106,7 +128,7 @@ def creates_trial_configs_from_sampled_parameters(
             "Trial saved_checkpoint_path from model_config was changed to the checkpoint found in the trial directory."
         )
 
-    ### Copies the  newly updated config files from the ray_results directory to the outputs directory (local folder) ##
+    ### Copies the  newly updated config files from the ray_results directory to the outputs directory (local folder)
     # Creates a trial configs directory in the outputs directory
     trial_output_config_dir = trial_output_dir / "configs"
     if not os.path.isdir(trial_output_config_dir):
@@ -122,7 +144,15 @@ def creates_trial_configs_from_sampled_parameters(
     return trial_config_path, trial_model_config_path
 
 
-def objective(sampled_params: dict[str, Any], use_wandb_ray_integration: bool, cli_args: dict):
+def objective(sampled_params: dict[str, Any], use_wandb_ray_integration: bool, cli_args: dict) -> None:
+    """
+    Defines the objective function to be optimized.
+
+    Args:
+        sampled_params: Sampled parameters for the current trial.
+        use_wandb_ray_integration: Whether to use Weights & Biases integration within Ray.
+        cli_args: Dictionary of the command line arguments.
+    """
     # Get the train context
     trial_id = ray_train.get_context().get_trial_id()
     trial_name = ray_train.get_context().get_trial_name()
