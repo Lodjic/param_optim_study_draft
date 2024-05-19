@@ -24,7 +24,23 @@ def grid_tile_one_image(
     img_saving_dir: Path,
     clip_boxes: bool = True,
     png_compression_level: int = 3,
-):
+) -> pl.DataFrame:
+    """
+    Divides one image into a grid of tiles, and affects and converts the bounding boxes to the correct tiles.
+
+    Args:
+        base_img_path: Path to the base image.
+        bboxes_df: Dataframe containing the ground truth (bounding boxes + labels) information.
+        tile_shape: Shape of the tiles.
+        overlap: Overlap between tiles.
+        min_bbox_area_on_tile: Minimum area ratio for bounding boxes to be considered to appear on a tile.
+        img_saving_dir: Directory in which to save the tiles.
+        clip_boxes: Whether to clip bounding boxes to the tile boundaries. Defaults to True.
+        png_compression_level: Compression level for saving PNG tiles. Defaults to 3.
+
+    Returns:
+        A DataFrame containing ground truth (bounding boxes + labels) information for each processed tile.
+    """
     img_bboxes_df = bboxes_df.filter(pl.col("img_name") == base_img_path.name)
     additional_info_columns = get_elements_with_regex("^(?!.*bbox.*|.*id.*).*$", img_bboxes_df.columns, unique=False)
 
@@ -127,6 +143,17 @@ def tile_images_mono_process(
     saving_dir: Path | None = None,
     images_extension: str = ".png",
 ) -> None:
+    """
+    Tile all the images present in a directory using the specified tiling method and arguments with a single process.
+
+    Args:
+        root_data_dir: The root directory containing images and annotations.
+        tiling_type: The type of tiling method to be used.
+        tiling_args: A dictionary containing arguments specific to the tiling method.
+        saving_dir: The directory where tiled images will be saved. If None, a default directory will be created.
+            Defaults to None.
+        images_extension: Image file extension. Defaults to '.png'.
+    """
     # Defining paths
     imgs_dir_path = root_data_dir / "imgs"
     gts_dir_path = root_data_dir / "annotations"
@@ -169,6 +196,19 @@ def tile_images(
     chunksize: int = 1,
     saving_dir: Path | None = None,
 ) -> None:
+    """
+    Tile all the images present in a directory using the specified tiling method and arguments with multiple processes.
+
+    Args:
+        root_data_dir: The root directory containing images and annotations.
+        tiling_type: The type of tiling method to be used.
+        tiling_args: A dictionary containing arguments specific to the tiling method.
+        images_extension: Image file extension. Defaults to '.png'.
+        processes: The number of processes to use for the parallel execution. Defaults to 4.
+        chunksize: The size of chunks to process in parallel. Default is 1.
+        saving_dir: The directory where tiled images will be saved. If None, a default directory will be created.
+            Defaults to None.
+    """
     # Defining paths
     imgs_dir_path = root_data_dir / "imgs"
     gts_dir_path = root_data_dir / "annotations"

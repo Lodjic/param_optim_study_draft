@@ -36,6 +36,20 @@ from lt_lib.utils.load_and_save import save_dict_as_json
 def get_all_annotations_from_rareplanes_geojsons(
     root_dir_path: Path, tiled_version: bool = True, imgs_extension: str = ".png", save_to_file: bool = True
 ) -> tuple[gpd.GeoDataFrame, dict[str : dict[str : list[int]]]]:
+    """
+    Gather annotations from RarePlanes GeoJSONs into 1 geodataframe and 1 minimal information dictionary.
+
+    Args:
+        root_dir_path: The root directory path containing images and annotations.
+        tiled_version: Whether the annotations are gathered from tiled version of the dataset. Defaults to True.
+        imgs_extension: Extension of image files. Defaults to ".png".
+        save_to_file: Whether to save the annotations to a file. Defaults to True.
+
+    Returns:
+        global_gdf: The global geodataframe containing all annotations.
+        minimal_gts_json: A dictionary containing the main columns of `global_gdf` which are 'ids', 'bboxes', and
+            'labels'.
+    """
     logger.info("Launching the gathering of all annotations into 1 unique geojson file.")
     # Defining paths
     images_dir_path = root_dir_path / "imgs"
@@ -92,6 +106,22 @@ def get_all_synthetic_gts_from_rareplanes_xmls(
     imgs_resolution: float = 0.3,
     save_to_file: bool = True,
 ) -> pl.DataFrame:
+    """
+    Extracts ground truth data (bboxes + labels) from XML annotations files of the synthetic part of RarePlanes dataset.
+
+    Args:
+        annotations_dir_path: Path to the directory containing XML annotations files.
+        imgs_extension: Image file extension. Defaults to ".png".
+        clip: Whether to clip the bounding boxes to image boundaries. Defaults to True.
+        wingspan_label_bins: Bins for wingspan labeling. Default bins values are obtained from the wingspan
+            thresholds given by the rareplanes public user guide. Bin values are divided by the image's resolution.
+            Defaults to [0, 15, 36]. Defaults to [0, 15, 36].
+        imgs_resolution: The resolution of the images in meters per pixel. Defaults to 0.3.
+        save_to_file: Whether to save the annoations to a CSV file. Defaults to True.
+
+    Returns:
+        bboxes_df: Dataframe containing ground truth data (bounding boxes + labels).
+    """
     bboxes_df = pl.DataFrame()
     for xml_path in tqdm(list(annotations_dir_path.glob("*.xml"))):
         bboxes_df = pl.concat(
@@ -121,6 +151,16 @@ def get_all_synthetic_gts_from_rareplanes_xmls(
 
 
 def get_rareplanes_real_xml_and_geojson_lists(img_list: list) -> tuple[list[Path], list[Path]]:
+    """
+    Constructs lists of file paths for the XML and GeoJSON files corresponding to a given list of image paths.
+
+    Args:
+        img_list: A list of image file paths.
+
+    Returns:
+        xml_list: A list of XML file paths.
+        geojson_list: A list of GeoJSON file paths.
+    """
     xml_list = construct_similar_file_path_list_from_another_dir(
         img_list, img_list[0].parent, f"{img_list[0].suffix}.aux.xml"
     )
@@ -133,6 +173,15 @@ def get_rareplanes_real_xml_and_geojson_lists(img_list: list) -> tuple[list[Path
 def move_rareplanes_real_img_xml_and_geojson_files(
     img_list: list[Path], xml_list: list[Path], geojson_list: list[Path], destination_dir_name: Literal["train", "val"]
 ) -> None:
+    """
+    Moves image, XML, and GeoJSON files to a specified destination directory.
+
+    Args:
+        img_list: List of image file paths.
+        xml_list: List of XML annotation file paths.
+        geojson_list: List of GeoJSON annotation file paths.
+        destination_dir_name: Destination directory apth. Should be either "train" or "val".
+    """
     root_imgs_dir = img_list[0].parent.parent
 
     # Creates train and val directories
@@ -148,8 +197,18 @@ def move_rareplanes_real_img_xml_and_geojson_files(
 
 
 def train_val_split_and_move_rareplanes_real_img_xml_and_geojson_files(
-    imgs_dir: Path, imgs_extension: str, val_proportion: float, seed: int | None = 42
-) -> tuple[list[Path], list[Path]]:
+    imgs_dir: Path, imgs_extension: str, val_proportion: float | int, seed: int | None = 42
+) -> None:
+    """
+    Splits image and annotation files into 2 sets (usually training and validation), and places them into appropriate
+    directories.
+
+    Args:
+        imgs_dir: Path to the directory containing images and annotations.
+        imgs_extension: Image file extension.
+        val_proportion: The split proportion (float between 0 and 1) or the number of files to sample (integer > 1).
+        seed: The seed value for random sampling. Default is 42.
+    """
     # Splits images and annotations files
     img_list = list(imgs_dir.glob(f"*{imgs_extension}"))
     train_img_list, val_img_list = split_files_randomly_from_list(img_list, val_proportion, seed)
@@ -167,6 +226,20 @@ def train_val_split_and_move_rareplanes_real_img_xml_and_geojson_files(
 def copy_rareplanes_synthetic_img_and_xml_files(
     img_list: list[Path], xml_list: list[Path], destination_root_data_dir: Path | None = None
 ) -> None:
+    """
+    Copies synthetic image and XML annotation files from the provided lists to a specified destination directory.
+
+    Args:
+        img_list: List of synthetic image file paths.
+        xml_list: List of XML annotation file paths corresponding to the synthetic images.
+        destination_root_data_dir: Destination root directory where the files should be copied. If not provided, a
+            default directory named "sampled_synthetic_data" will be created in the parent directory of the first image
+            file's parent directory. Defaults to None.
+
+    Note:
+        This function assumes that each image file in `img_list` has a corresponding XML annotation file
+        in `xml_list` at the same index.
+    """
     root_data_dir = img_list[0].parent.parent
 
     if not destination_root_data_dir:
@@ -190,6 +263,21 @@ def copy_fraction_of_random_rareplanes_synthetic_img_and_xml_files(
     seed: int | None = 42,
     destination_dir: Path | None = None,
 ) -> tuple[list[Path], list[Path]]:
+    """
+    Copies a fraction of random rareplanes synthetic image and XML files to a destination directory.
+
+    Args:
+        imgs_dir: Path to the directory containing the images and annotations files.
+        imgs_extension: Image file extension.
+        fraction_to_copy: Fraction of files to copy from the source directory.
+        seed: The seed value for random sampling. Default is 42.
+        destination_dir: Destination directory path where the files will be copied. If None, files will be copied to
+            a directory named "sampled_synthetic_data" in the parent directory of the first image file's parent
+            directory. Defaults to None.
+
+    Returns:
+        A tuple containing two lists: the paths of the copied image files and the paths of the copied XML files.
+    """
     # Splits images and annotations files
     img_list = list(imgs_dir.glob(f"*{imgs_extension}"))
     _, img_list_to_copy = split_files_randomly_from_list(img_list, fraction_to_copy, seed)
@@ -205,9 +293,21 @@ def copy_nb_of_random_rareplanes_synthetic_tile_and_gts_files(
     root_data_dir: Path,
     imgs_extension: str,
     select_nb: int,
-    destination_root_data_dir: Path | None = None,
     seed: int | None = 42,
-) -> tuple[list[Path], list[Path]]:
+    destination_root_data_dir: Path | None = None,
+) -> None:
+    """
+    Copies a specified number of randomly selected images along with their annotations to a destination directory.
+
+    Args:
+        root_data_dir: The root data directory containing images and annotations.
+        imgs_extension: Image file extension.
+        select_nb: The number of images to select randomly.
+        seed: The seed value for random sampling. Default is 42.
+        destination_root_data_dir: The root directory where the selected images and annotations will be copied.
+            If None, files will be copied to a subdirectory named 'sampled_synthetic_tiled_data' crated in the
+            `root_data_dir` directory. Defaults to None.
+    """
     # Get the image names that have objects on them
     gts_df = pl.read_csv(root_data_dir / "annotations/gts.csv")
     gts_df = gts_df.drop_nulls()
@@ -250,6 +350,18 @@ def adjust_labels_base_on_wingspan(
     imgs_resolution: float = 0.3,
     save_to_file: bool = True,
 ) -> None:
+    """
+    Adjusts labels based on wingspan values.
+
+    Args:
+        gts_with_wingspan_path: Path to the CSV file containing ground truth data, including wingspan information.
+        gts_to_adjust_path: Path of the CSV file containing ground truth data to adjust.
+        wingspan_label_bins: Bins for wingspan labeling. Default bins values are obtained from the wingspan
+            thresholds given by the rareplanes public user guide. Bin values are divided by the image's resolution.
+            Defaults to [0, 15, 36]. Defaults to [0, 15, 36].
+        imgs_resolution: Resolution of the images in meters per pixel. Default is 0.3.
+        save_to_file: Whether to save the adjusted ground truth data to a CSV file. Defaults to True.
+    """
     gts_with_wingspan = pl.read_csv(gts_with_wingspan_path)
     gts_to_adjust = pl.read_csv(gts_to_adjust_path)
 
